@@ -12,6 +12,9 @@
 
 #     ABSTRACT_FROM => q[Compare.pm]
 #     AUTHOR => q[A. U. Thor <root@slackware.lan>]
+#     DEFINE => q[]
+#     INC => q[-I.]
+#     LIBS => [q[]]
 #     NAME => q[Time::Compare]
 #     PREREQ_PM => {  }
 #     VERSION_FROM => q[Compare.pm]
@@ -111,15 +114,17 @@ BASEEXT = Compare
 PARENT_NAME = Time
 DLBASE = $(BASEEXT)
 VERSION_FROM = Compare.pm
-OBJECT = 
+INC = -I.
+DEFINE = 
+OBJECT = $(BASEEXT)$(OBJ_EXT)
 LDFROM = $(OBJECT)
 LINKTYPE = dynamic
 
 # Handy lists of source code files:
-XS_FILES= 
-C_FILES = 
-O_FILES = 
-H_FILES = 
+XS_FILES= Compare.xs
+C_FILES = Compare.c
+O_FILES = Compare.o
+H_FILES = ppport.h
 MAN1PODS = 
 MAN3PODS = Compare.pm
 INST_MAN1DIR = blib/man1
@@ -156,9 +161,9 @@ INST_ARCHLIBDIR  = $(INST_ARCHLIB)/Time
 INST_AUTODIR     = $(INST_LIB)/auto/$(FULLEXT)
 INST_ARCHAUTODIR = $(INST_ARCHLIB)/auto/$(FULLEXT)
 
-INST_STATIC  =
-INST_DYNAMIC =
-INST_BOOT    =
+INST_STATIC  = $(INST_ARCHAUTODIR)/$(BASEEXT)$(LIB_EXT)
+INST_DYNAMIC = $(INST_ARCHAUTODIR)/$(DLBASE).$(DLEXT)
+INST_BOOT    = $(INST_ARCHAUTODIR)/$(BASEEXT).bs
 
 EXPORT_LIST = 
 
@@ -179,6 +184,13 @@ AUTOSPLITFILE = $(PERLRUN) -e 'use AutoSplit;  autosplit($$ARGV[0], $$ARGV[1], 0
 
 
 # --- MakeMaker tool_xsubpp section:
+
+XSUBPPDIR = /usr/lib/perl5/5.8.0/ExtUtils
+XSUBPP = $(XSUBPPDIR)/xsubpp
+XSPROTOARG = 
+XSUBPPDEPS = $(XSUBPPDIR)/typemap $(XSUBPP)
+XSUBPPARGS = -typemap $(XSUBPPDIR)/typemap
+XSUBPP_EXTRA_ARGS = 
 
 
 # --- MakeMaker tools_other section:
@@ -257,12 +269,25 @@ RCS_LABEL = rcs -Nv$(VERSION_SYM): -q
 
 # --- MakeMaker cflags section:
 
+CCFLAGS = -fno-strict-aliasing -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
+OPTIMIZE = -O3
+PERLTYPE = 
+MPOLLUTE = 
+
 
 # --- MakeMaker const_loadlibs section:
 
+# Time::Compare might depend on some other libraries:
+# See ExtUtils::Liblist for details
+#
+LD_RUN_PATH = 
+
 
 # --- MakeMaker const_cccmd section:
-
+CCCMD = $(CC) -c $(PASTHRU_INC) $(INC) \
+	$(CCFLAGS) $(OPTIMIZE) \
+	$(PERLTYPE) $(MPOLLUTE) $(DEFINE_VERSION) \
+	$(XS_DEFINE_VERSION)
 
 # --- MakeMaker post_constants section:
 
@@ -280,11 +305,42 @@ PASTHRU = LIB="$(LIB)"\
 
 # --- MakeMaker c_o section:
 
+.c.i:
+	cc -E -c $(PASTHRU_INC) $(INC) \
+	$(CCFLAGS) $(OPTIMIZE) \
+	$(PERLTYPE) $(MPOLLUTE) $(DEFINE_VERSION) \
+	$(XS_DEFINE_VERSION) $(CCCDLFLAGS) "-I$(PERL_INC)" $(PASTHRU_DEFINE) $(DEFINE) $*.c > $*.i
+
+.c.s:
+	$(CCCMD) -S $(CCCDLFLAGS) "-I$(PERL_INC)" $(PASTHRU_DEFINE) $(DEFINE) $*.c
+
+.c$(OBJ_EXT):
+	$(CCCMD) $(CCCDLFLAGS) "-I$(PERL_INC)" $(PASTHRU_DEFINE) $(DEFINE) $*.c
+
+.C$(OBJ_EXT):
+	$(CCCMD) $(CCCDLFLAGS) "-I$(PERL_INC)" $(PASTHRU_DEFINE) $(DEFINE) $*.C
+
+.cpp$(OBJ_EXT):
+	$(CCCMD) $(CCCDLFLAGS) "-I$(PERL_INC)" $(PASTHRU_DEFINE) $(DEFINE) $*.cpp
+
+.cxx$(OBJ_EXT):
+	$(CCCMD) $(CCCDLFLAGS) "-I$(PERL_INC)" $(PASTHRU_DEFINE) $(DEFINE) $*.cxx
+
+.cc$(OBJ_EXT):
+	$(CCCMD) $(CCCDLFLAGS) "-I$(PERL_INC)" $(PASTHRU_DEFINE) $(DEFINE) $*.cc
+
 
 # --- MakeMaker xs_c section:
 
+.xs.c:
+	$(PERLRUN) $(XSUBPP) $(XSPROTOARG) $(XSUBPPARGS) $(XSUBPP_EXTRA_ARGS) $*.xs > $*.xsc && $(MV) $*.xsc $*.c
+
 
 # --- MakeMaker xs_o section:
+
+.xs$(OBJ_EXT):
+	$(PERLRUN) $(XSUBPP) $(XSPROTOARG) $(XSUBPPARGS) $*.xs > $*.xsc && $(MV) $*.xsc $*.c
+	$(CCCMD) $(CCCDLFLAGS) "-I$(PERL_INC)" $(PASTHRU_DEFINE) $(DEFINE) $*.c
 
 
 # --- MakeMaker top_targets section:
@@ -335,6 +391,8 @@ $(INST_MAN3DIR)/.exists :: /usr/lib/perl5/5.8.0/i486-linux/CORE/perl.h
 
 	-@$(CHMOD) $(PERM_RWX) $(INST_MAN3DIR)
 
+$(O_FILES): $(H_FILES)
+
 help:
 	perldoc ExtUtils::MakeMaker
 
@@ -359,10 +417,37 @@ dynamic :: Makefile $(INST_DYNAMIC) $(INST_BOOT)
 
 # --- MakeMaker dynamic_bs section:
 
-BOOTSTRAP =
+BOOTSTRAP = Compare.bs
+
+# As Mkbootstrap might not write a file (if none is required)
+# we use touch to prevent make continually trying to remake it.
+# The DynaLoader only reads a non-empty file.
+$(BOOTSTRAP): Makefile  $(INST_ARCHAUTODIR)/.exists
+	@echo "Running Mkbootstrap for $(NAME) ($(BSLOADLIBS))"
+	@$(PERLRUN) \
+		"-MExtUtils::Mkbootstrap" \
+		-e "Mkbootstrap('$(BASEEXT)','$(BSLOADLIBS)');"
+	@$(TOUCH) $(BOOTSTRAP)
+	$(CHMOD) $(PERM_RW) $@
+
+$(INST_BOOT): $(BOOTSTRAP) $(INST_ARCHAUTODIR)/.exists
+	@rm -rf $(INST_BOOT)
+	-cp $(BOOTSTRAP) $(INST_BOOT)
+	$(CHMOD) $(PERM_RW) $@
 
 
 # --- MakeMaker dynamic_lib section:
+
+# This section creates the dynamically loadable $(INST_DYNAMIC)
+# from $(OBJECT) and possibly $(MYEXTLIB).
+ARMAYBE = :
+OTHERLDFLAGS = 
+INST_DYNAMIC_DEP = 
+
+$(INST_DYNAMIC): $(OBJECT) $(MYEXTLIB) $(BOOTSTRAP) $(INST_ARCHAUTODIR)/.exists $(EXPORT_LIST) $(PERL_ARCHIVE) $(PERL_ARCHIVE_AFTER) $(INST_DYNAMIC_DEP)
+	$(RM_F) $@
+	LD_RUN_PATH="$(LD_RUN_PATH)" $(LD)  $(LDDLFLAGS) $(LDFROM) $(OTHERLDFLAGS) -o $@ $(MYEXTLIB) $(PERL_ARCHIVE) $(LDLOADLIBS) $(PERL_ARCHIVE_AFTER) $(EXPORT_LIST)
+	$(CHMOD) $(PERM_RWX) $@
 
 
 # --- MakeMaker static section:
@@ -375,6 +460,13 @@ static :: Makefile $(INST_STATIC)
 
 
 # --- MakeMaker static_lib section:
+
+$(INST_STATIC): $(OBJECT) $(MYEXTLIB) $(INST_ARCHAUTODIR)/.exists
+	$(RM_RF) $@
+	$(FULL_AR) $(AR_STATIC_ARGS) $@ $(OBJECT) && $(RANLIB) $@
+	$(CHMOD) $(PERM_RWX) $@
+	@echo "$(EXTRALIBS)" > $(INST_ARCHAUTODIR)/extralibs.ld
+
 
 
 # --- MakeMaker manifypods section:
@@ -406,7 +498,7 @@ manifypods : pure_all Compare.pm
 # the Makefile here so a later make realclean still has a makefile to use.
 
 clean ::
-	-rm -rf ./blib $(MAKE_APERL_FILE) $(INST_ARCHAUTODIR)/extralibs.all perlmain.c tmon.out mon.out so_locations pm_to_blib *$(OBJ_EXT) *$(LIB_EXT) perl.exe perl perl$(EXE_EXT) $(BOOTSTRAP) $(BASEEXT).bso $(BASEEXT).def lib$(BASEEXT).def $(BASEEXT).exp $(BASEEXT).x core core.*perl.*.? *perl.core
+	-rm -rf Compare.c ./blib $(MAKE_APERL_FILE) $(INST_ARCHAUTODIR)/extralibs.all perlmain.c tmon.out mon.out so_locations pm_to_blib *$(OBJ_EXT) *$(LIB_EXT) perl.exe perl perl$(EXE_EXT) $(BOOTSTRAP) $(BASEEXT).bso $(BASEEXT).def lib$(BASEEXT).def $(BASEEXT).exp $(BASEEXT).x core core.*perl.*.? *perl.core
 	-mv Makefile Makefile.old $(DEV_NULL)
 
 
@@ -416,6 +508,8 @@ clean ::
 realclean purge ::  clean
 	rm -rf $(INST_AUTODIR) $(INST_ARCHAUTODIR)
 	rm -rf $(DISTVNAME)
+	rm -f $(INST_DYNAMIC) $(INST_BOOT)
+	rm -f $(INST_STATIC)
 	rm -f  blib/lib/Time/Compare.pm
 	rm -rf Makefile Makefile.old
 
@@ -596,8 +690,62 @@ FORCE:
 
 # --- MakeMaker perldepend section:
 
+PERL_HDRS = \
+	$(PERL_INC)/EXTERN.h		\
+	$(PERL_INC)/INTERN.h		\
+	$(PERL_INC)/XSUB.h		\
+	$(PERL_INC)/av.h		\
+	$(PERL_INC)/cc_runtime.h	\
+	$(PERL_INC)/config.h		\
+	$(PERL_INC)/cop.h		\
+	$(PERL_INC)/cv.h		\
+	$(PERL_INC)/dosish.h		\
+	$(PERL_INC)/embed.h		\
+	$(PERL_INC)/embedvar.h		\
+	$(PERL_INC)/fakethr.h		\
+	$(PERL_INC)/form.h		\
+	$(PERL_INC)/gv.h		\
+	$(PERL_INC)/handy.h		\
+	$(PERL_INC)/hv.h		\
+	$(PERL_INC)/intrpvar.h		\
+	$(PERL_INC)/iperlsys.h		\
+	$(PERL_INC)/keywords.h		\
+	$(PERL_INC)/mg.h		\
+	$(PERL_INC)/nostdio.h		\
+	$(PERL_INC)/op.h		\
+	$(PERL_INC)/opcode.h		\
+	$(PERL_INC)/opnames.h		\
+	$(PERL_INC)/patchlevel.h	\
+	$(PERL_INC)/perl.h		\
+	$(PERL_INC)/perlapi.h		\
+	$(PERL_INC)/perlio.h		\
+	$(PERL_INC)/perlsdio.h		\
+	$(PERL_INC)/perlsfio.h		\
+	$(PERL_INC)/perlvars.h		\
+	$(PERL_INC)/perly.h		\
+	$(PERL_INC)/pp.h		\
+	$(PERL_INC)/pp_proto.h		\
+	$(PERL_INC)/proto.h		\
+	$(PERL_INC)/regcomp.h		\
+	$(PERL_INC)/regexp.h		\
+	$(PERL_INC)/regnodes.h		\
+	$(PERL_INC)/scope.h		\
+	$(PERL_INC)/sv.h		\
+	$(PERL_INC)/thrdvar.h		\
+	$(PERL_INC)/thread.h		\
+	$(PERL_INC)/unixish.h		\
+	$(PERL_INC)/utf8.h		\
+	$(PERL_INC)/util.h		\
+	$(PERL_INC)/warnings.h
+
+$(OBJECT) : $(PERL_HDRS)
+
+Compare.c : $(XSUBPPDEPS)
+
 
 # --- MakeMaker makefile section:
+
+$(OBJECT) : $(FIRST_MAKEFILE)
 
 # We take a very conservative approach here, but it\'s worth it.
 # We move Makefile to Makefile.old here to avoid gnu make looping.
@@ -651,8 +799,12 @@ testdb_dynamic :: pure_all
 
 test_ : test_dynamic
 
-test_static :: test_dynamic
-testdb_static :: testdb_dynamic
+test_static :: pure_all $(MAP_TARGET)
+	PERL_DL_NONLAZY=1 ./$(MAP_TARGET) "-MExtUtils::Command::MM" "-e" "test_harness($(TEST_VERBOSE), '$(INST_LIB)', '$(INST_ARCHLIB)')" $(TEST_FILES)
+
+testdb_static :: pure_all $(MAP_TARGET)
+	PERL_DL_NONLAZY=1 ./$(MAP_TARGET) $(TESTDB_SW) "-I$(INST_LIB)" "-I$(INST_ARCHLIB)" $(TEST_FILE)
+
 
 
 # --- MakeMaker ppd section:
